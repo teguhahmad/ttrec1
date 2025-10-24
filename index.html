@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VMOS Cloud Uploader</title>
+    <!-- Bootstrap CSS untuk tampilan dasar -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Tambahkan gaya dasar jika perlu */
+        .hidden { display: none; }
+        .file-table { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">VMOS Cloud Uploader Dashboard</h1>
+
+        <!-- Bagian Login -->
+        <div id="loginSection">
+            <h3>Login</h3>
+            <form id="loginForm">
+                <div class="mb-3">
+                    <label for="email" class="form-label">Email address</label>
+                    <input type="email" class="form-control" id="email" required>
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+        </div>
+
+        <!-- Bagian Utama (Sembunyikan saat belum login) -->
+        <div id="mainSection" class="hidden">
+            <h3>Welcome, <span id="userEmailDisplay"></span>!</h3>
+            <button id="logoutBtn" class="btn btn-secondary mb-3">Logout</button>
+
+            <!-- Form dan Status Recording -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Recording Management</h5>
+                    <form id="recordingForm">
+                        <div class="mb-3">
+                            <label for="targetUsername" class="form-label">TikTok Username</label>
+                            <input type="text" class="form-control" id="targetUsername" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="duration" class="form-label">Duration (seconds)</label>
+                            <input type="number" class="form-control" id="duration" min="1" required>
+                        </div>
+                        <button type="submit" class="btn btn-success">Start Recording</button>
+                    </form>
+                    <div id="recordingStatus" class="mt-2"></div>
+
+                    <!-- Tombol Refresh untuk daftar rekaman aktif -->
+                    <button id="refreshActiveRecordingsBtn" class="btn btn-info mt-3">Refresh Active Recordings</button>
+
+                    <!-- Daftar Rekaman Aktif -->
+                    <h6 class="mt-3">Active Recordings:</h6>
+                    <div id="activeRecordingsList"></div>
+
+                    <!-- Form untuk Stop Recording -->
+                    <form id="stopRecordingForm" class="mt-3">
+                        <div class="mb-3">
+                            <label for="stopRecordingId" class="form-label">Select Recording ID to Stop:</label>
+                            <select class="form-control" id="stopRecordingId" required>
+                                <option value="" disabled selected>Select an active recording...</option>
+                                <!-- Opsi akan diisi oleh JavaScript -->
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-warning">Stop Selected Recording</button>
+                    </form>
+                    <div id="stopRecordingStatus" class="mt-2"></div>
+                </div>
+            </div>
+
+            <!-- Tabel File -->
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">File Management</h5>
+                    <button id="refreshFilesBtn" class="btn btn-info mb-2">Refresh Files</button>
+                    <button id="moveAllProcessedBtn" class="btn btn-warning mb-2">Move All Processed to Upload</button> <!-- Tambahkan tombol ini -->
+                    <div id="fileTabs">
+                        <ul class="nav nav-tabs" id="fileTypeTab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="raw-tab" data-bs-toggle="tab" data-bs-target="#raw" type="button" role="tab">Raw</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="processed-tab" data-bs-toggle="tab" data-bs-target="#processed" type="button" role="tab">Processed</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab">Upload</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="fileTypeTabContent">
+                            <div class="tab-pane fade show active" id="raw" role="tabpanel">
+                                <table class="table table-striped file-table">
+                                    <!-- Tambahkan kolom "Action" di thead -->
+                                    <thead><tr><th>Name</th><th>Size (MB)</th><th>Duration</th><th>Modified</th><th>Action</th></tr></thead>
+                                    <tbody id="rawTableBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="tab-pane fade" id="processed" role="tabpanel">
+                                <table class="table table-striped file-table">
+                                    <thead><tr><th>Name</th><th>Size (MB)</th><th>Duration</th><th>Modified</th><th>Action</th></tr></thead> <!-- Tambahkan kolom Action -->
+                                    <tbody id="processedTableBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="tab-pane fade" id="upload" role="tabpanel">
+                                <table class="table table-striped file-table">
+                                    <!-- Tambahkan kolom "Action" di thead untuk upload juga -->
+                                    <thead><tr><th>Name</th><th>Size (MB)</th><th>Duration</th><th>Modified</th><th>Action</th></tr></thead> <!-- Diedit di sini -->
+                                    <tbody id="uploadTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="triggerUploadBtn" class="btn btn-warning mt-3">Upload All from Upload Folder</button>
+                    <div id="uploadStatus" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS dan Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Base URL API
+        const API_BASE = '/';
+
+        // DOM Elements
+        const loginSection = document.getElementById('loginSection');
+        const mainSection = document.getElementById('mainSection');
+        const userEmailDisplay = document.getElementById('userEmailDisplay');
+        const loginForm = document.getElementById('loginForm');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const recordingForm = document.getElementById('recordingForm');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const refreshFilesBtn = document.getElementById('refreshFilesBtn');
+        const rawTableBody = document.getElementById('rawTableBody');
+        const processedTableBody = document.getElementById('processedTableBody');
+        const uploadTableBody = document.getElementById('uploadTableBody');
+        const triggerUploadBtn = document.getElementById('triggerUploadBtn');
+        const uploadStatus = document.getElementById('uploadStatus');
+        // Elements untuk recording management baru
+        const refreshActiveRecordingsBtn = document.getElementById('refreshActiveRecordingsBtn');
+        const activeRecordingsList = document.getElementById('activeRecordingsList');
+        const stopRecordingForm = document.getElementById('stopRecordingForm');
+        const stopRecordingId = document.getElementById('stopRecordingId');
+        const stopRecordingStatus = document.getElementById('stopRecordingStatus');
+
+        // Check login status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Cek apakah user sudah login (dengan mencoba mengambil file)
+            fetch(`${API_BASE}files`, {
+                credentials: 'include' // Penting: kirim cookie session jika ada
+            })
+                .then(response => {
+                    if (response.status === 401) {
+                        // Tidak login
+                        loginSection.classList.remove('hidden');
+                        mainSection.classList.add('hidden');
+                        return;
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data && typeof data === 'object') {
+                        // Login
+                        loginSection.classList.add('hidden');
+                        mainSection.classList.remove('hidden');
+                        // Ambil email dari localStorage (atau bisa juga dari endpoint / yang mengembalikan data user)
+                        const user_email = localStorage.getItem('user_email');
+                        if(user_email) userEmailDisplay.textContent = user_email;
+                        renderFiles(data);
+                        loadActiveRecordings(); // Muat juga daftar rekaman aktif
+                    }
+                })
+                .catch(error => console.error('Error checking login status:', error));
+        });
+
+        // Login
+        loginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            fetch(`${API_BASE}login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Penting: terima/atur cookie session
+                body: JSON.stringify({email: email, password: password})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.message === "Login berhasil") {
+                    localStorage.setItem('user_email', email); // Simpan sementara
+                    userEmailDisplay.textContent = email;
+                    loginSection.classList.add('hidden');
+                    mainSection.classList.remove('hidden');
+                    loadFiles(); // Muat file setelah login
+                    loadActiveRecordings(); // Muat juga daftar rekaman aktif
+                } else {
+                    alert(data.error || "Login gagal");
+                }
+            })
+            .catch(error => console.error('Error logging in:', error));
+        });
+
+        // Logout
+        logoutBtn.addEventListener('click', function() {
+            fetch(`${API_BASE}logout`, {
+                method: 'POST',
+                credentials: 'include', // Penting: kirim cookie session untuk dihapus
+            })
+            .then(response => response.json())
+            .then(data => {
+                localStorage.removeItem('user_email'); // Hapus simpanan
+                loginSection.classList.remove('hidden');
+                mainSection.classList.add('hidden');
+            })
+            .catch(error => console.error('Error logging out:', error));
+        });
+
+        // Trigger Recording
+        recordingForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const targetUsername = document.getElementById('targetUsername').value;
+            const duration = document.getElementById('duration').value;
+
+            fetch(`${API_BASE}trigger_recording`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Kirim session
+                body: JSON.stringify({target_username: targetUsername, duration: duration})
+            })
+            .then(response => response.json())
+            .then(data => {
+                recordingStatus.textContent = data.message || data.error;
+                recordingStatus.className = data.error ? 'text-danger mt-2' : 'text-success mt-2';
+                if (!data.error) {
+                    // Jika sukses, refresh daftar rekaman aktif
+                    loadActiveRecordings();
+                }
+                // Reset form
+                recordingForm.reset();
+            })
+            .catch(error => console.error('Error triggering recording:', error));
+        });
+
+        // Load Active Recordings List
+        function loadActiveRecordings() {
+            fetch(`${API_BASE}active_recordings`, {
+                credentials: 'include' // Kirim session
+            })
+                .then(response => response.json())
+                .then(data => {
+                    const listDiv = activeRecordingsList; // Gunakan variabel yang benar
+                    const selectElement = stopRecordingId; // Gunakan variabel yang benar
+
+                    // Bersihkan list dan select
+                    listDiv.innerHTML = '';
+                    selectElement.innerHTML = '<option value="" disabled selected>Select an active recording...</option>';
+
+                    if (data && data.length > 0) {
+                        data.forEach(rec => {
+                            const status = rec.status.startsWith('Stopped') ? 'text-danger' : 'text-success';
+                            const item = document.createElement('div');
+                            item.className = `alert alert-secondary alert-dismissible fade show ${status}`;
+                            item.innerHTML = `
+                                <strong>ID:</strong> ${rec.id}<br>
+                                <strong>Target:</strong> @${rec.target_username}<br>
+                                <strong>Status:</strong> ${rec.status} (PID: ${rec.pid})
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            `;
+                            listDiv.appendChild(item);
+
+                            // Tambahkan opsi ke select
+                            const option = document.createElement('option');
+                            option.value = rec.id;
+                            option.textContent = `@${rec.target_username} (${rec.id})`;
+                            selectElement.appendChild(option);
+                        });
+                    } else {
+                        listDiv.innerHTML = '<p class="text-muted">No active recordings.</p>';
+                    }
+                })
+                .catch(error => console.error('Error loading active recordings:', error));
+        }
+
+        // Event listener untuk tombol refresh
+        refreshActiveRecordingsBtn.addEventListener('click', loadActiveRecordings);
+
+        // Stop Recording Form
+        stopRecordingForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const recordingId = stopRecordingId.value; // Gunakan variabel yang benar
+
+            if (!recordingId) {
+                stopRecordingStatus.textContent = "Pilih rekaman yang ingin dihentikan.";
+                stopRecordingStatus.className = 'text-warning mt-2';
+                return;
+            }
+
+            fetch(`${API_BASE}stop_recording`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Kirim session
+                body: JSON.stringify({recording_id: recordingId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                stopRecordingStatus.textContent = data.message || data.error;
+                stopRecordingStatus.className = data.error ? 'text-danger mt-2' : 'text-success mt-2';
+                if (!data.error) {
+                    // Jika sukses, refresh daftar rekaman aktif
+                    loadActiveRecordings();
+                }
+            })
+            .catch(error => console.error('Error stopping recording:', error));
+        });
+
+        // Load and Render Files
+        function loadFiles() {
+            fetch(`${API_BASE}files`, {
+                credentials: 'include' // Kirim session
+            })
+                .then(response => response.json())
+                .then(data => {
+                    renderFiles(data);
+                })
+                .catch(error => console.error('Error loading files:', error));
+        }
+
+        
+        function renderFiles(data) {
+            // Kosongkan tabel dulu
+            rawTableBody.innerHTML = '';
+            processedTableBody.innerHTML = '';
+            uploadTableBody.innerHTML = '';
+
+            // --- Fungsi Pembantu untuk membuat tombol Action ---
+            function createActionButtons(file, folderType) {
+                const actionCell = document.createElement('td');
+
+                // --- PERUBAHAN: Tambahkan tombol Convert hanya untuk file di folder 'raw' ---
+                if (folderType === 'raw') {
+                    const convertBtn = document.createElement('button');
+                    convertBtn.className = 'btn btn-sm btn-success me-1'; // Gunakan class 'success' untuk membedakan
+                    convertBtn.textContent = 'Convert';
+                    convertBtn.onclick = function () {
+                        convertFile(file.path); // Kirim relative_path ke fungsi convertFile
+                    };
+                    actionCell.appendChild(convertBtn);
+                }
+
+                // Tombol Rename (untuk semua folder)
+                const renameBtn = document.createElement('button');
+                renameBtn.className = 'btn btn-sm btn-outline-primary me-1'; // Tambahkan margin end
+                renameBtn.textContent = 'Rename';
+                renameBtn.onclick = function () {
+                    renameFile(file.path, folderType); // Kirim relative_path dan folder_type
+                };
+
+                // Tombol Delete (untuk semua folder)
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-sm btn-outline-danger';
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.onclick = function () {
+                    if (confirm(`Apakah Anda yakin ingin menghapus file '${file.name}'?`)) {
+                        deleteFile(file.path, folderType); // Kirim relative_path dan folder_type
+                    }
+                };
+
+                // Tambahkan tombol Rename & Delete ke cell (jika bukan raw, hanya ini yang muncul)
+                actionCell.appendChild(renameBtn);
+                actionCell.appendChild(deleteBtn);
+
+                return actionCell;
+            }
+
+            // Isi tabel Raw
+            if (data.raw) {
+                data.raw.forEach(file => {
+                    const row = rawTableBody.insertRow();
+                    row.insertCell(0).textContent = file.name;
+                    row.insertCell(1).textContent = file.size_mb;
+                    row.insertCell(2).textContent = file.duration;
+                    row.insertCell(3).textContent = file.modified;
+                    
+                    // Tambahkan kolom Actions
+                    const actionCell = createActionButtons(file, 'raw');
+                    row.appendChild(actionCell);
+                });
+            }
+
+            // Isi tabel Processed
+            if (data.processed) {
+                data.processed.forEach(file => {
+                    const row = processedTableBody.insertRow();
+                    row.insertCell(0).textContent = file.name;
+                    row.insertCell(1).textContent = file.size_mb;
+                    row.insertCell(2).textContent = file.duration;
+                    row.insertCell(3).textContent = file.modified;
+                    
+                    // Tambahkan kolom Actions
+                    const actionCell = createActionButtons(file, 'processed');
+                    row.appendChild(actionCell);
+                });
+            }
+
+            // Isi tabel Upload
+            if (data.upload) {
+                data.upload.forEach(file => {
+                    const row = uploadTableBody.insertRow();
+                    row.insertCell(0).textContent = file.name;
+                    row.insertCell(1).textContent = file.size_mb;
+                    row.insertCell(2).textContent = file.duration;
+                    row.insertCell(3).textContent = file.modified;
+                    
+                    // Tambahkan kolom Actions
+                    const actionCell = createActionButtons(file, 'upload');
+                    row.appendChild(actionCell);
+                });
+            }
+        }
+
+        // Fungsi untuk memicu konversi file
+        function convertFile(relative_path) {
+            fetch(`${API_BASE}convert_file`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Kirim session
+                body: JSON.stringify({
+                    relative_path: relative_path,
+                    folder_type: 'raw' // Kita tetap tentukan hanya dari raw
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message || data.error || "Status konversi diterima.");
+                if (!data.error) {
+                    loadFiles(); // Refresh daftar file raw dan processed
+                }
+            })
+            .catch(error => console.error('Error converting file:', error));
+        }
+
+        // Fungsi untuk memicu pemindahan file ke upload
+        function moveFileToUpload(relative_path) {
+            fetch(`${API_BASE}move_to_upload`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Kirim session
+                body: JSON.stringify({
+                    relative_path: relative_path, // Kirim relative_path
+                    folder_type: 'processed' // Kita tentukan hanya dari processed
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message || data.error || "Status pemindahan diterima.");
+                if (!data.error) {
+                    loadFiles(); // Refresh daftar file processed dan upload
+                }
+            })
+            .catch(error => console.error('Error moving file to upload:', error));
+        }
+
+        // Fungsi untuk memicu pemindahan SEMUA file processed ke upload
+        function moveAllProcessedToUpload() {
+            fetch(`${API_BASE}move_all_processed_to_upload`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Kirim session
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message || data.error || "Status pemindahan semua file diterima.");
+                if (!data.error || data.moved_files) { // Jika berhasil atau tidak ada file untuk dipindah
+                    loadFiles(); // Refresh daftar file processed dan upload
+                }
+            })
+            .catch(error => console.error('Error moving all files to upload:', error));
+        }
+
+
+        // --- Fungsi untuk Rename File ---
+        function renameFile(relativePath, folderType) { // Tambahkan folderType meski tidak digunakan di backend untuk konsistensi jika diperlukan nanti
+            console.log(`[JS DEBUG] renameFile dipanggil dengan relativePath: ${relativePath}, folderType: ${folderType}`); // Tambahkan log debug
+            const fileName = relativePath.split('\\').pop().split('/').pop(); // Dapatkan nama file dari path
+            const newName = prompt("Masukkan nama baru untuk file:", fileName);
+            
+            if (newName === null) {
+                console.log("[JS DEBUG] Pengguna membatalkan rename."); // Tambahkan log debug
+                return; // Pengguna membatalkan
+            }
+            if (newName.trim() === "" || newName === fileName) {
+                alert("Nama file baru tidak valid atau sama dengan nama lama.");
+                console.log(`[JS DEBUG] Nama baru tidak valid/tidak berubah. Nama lama: ${fileName}, Nama baru: ${newName}`); // Tambahkan log debug
+                return;
+            }
+
+            // --- PERBAIKAN: Tambahkan logging URL dan body request ---
+            const url = `${API_BASE}rename_file`;
+            const requestBody = JSON.stringify({
+                relative_path: relativePath,
+                new_name: newName
+            });
+            console.log(`[JS DEBUG] Mengirim request ke: ${url}`);
+            console.log(`[JS DEBUG] Body request: ${requestBody}`);
+
+            fetch(url, { // Gunakan url yang sudah dibangun
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: requestBody // Gunakan requestBody yang sudah dibangun
+            })
+            .then(response => {
+                console.log(`[JS DEBUG] Response diterima dari server. Status: ${response.status}`); // Tambahkan log debug
+                if (!response.ok) { // Cek apakah response OK (status 200-299)
+                     throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    alert(`Gagal mengganti nama: ${data.error}`);
+                    console.error(`[JS ERROR] Server mengembalikan error: ${data.error}`); // Tambahkan log error
+                } else {
+                    alert(data.message);
+                    console.log(`[JS INFO] Sukses rename: ${data.message}`); // Tambahkan log info
+                    loadFiles(); // Refresh daftar file
+                }
+            })
+            .catch(error => {
+                console.error('[JS ERROR] Error renaming file:', error);
+                alert(`Terjadi kesalahan saat mengganti nama file: ${error.message || error}`); // Tampilkan pesan error yang lebih spesifik
+            });
+        }
+
+        // --- Fungsi untuk Delete File ---
+        function deleteFile(relativePath, folderType) {
+            console.log(`[JS DEBUG] deleteFile dipanggil dengan relativePath: ${relativePath}, folderType: ${folderType}`); // Tambahkan log debug
+            // Konfirmasi sudah dilakukan di renderFiles, jadi langsung kirim request
+            if (!confirm(`Apakah Anda yakin ingin menghapus file '${relativePath.split('\\').pop().split('/').pop()}'?`)) { // Tambahkan konfirmasi di sini juga untuk konsistensi
+                 console.log("[JS DEBUG] Pengguna membatalkan delete."); // Tambahkan log debug
+                 return;
+            }
+            
+            // --- PERBAIKAN: Tambahkan logging URL dan body request ---
+            const url = `${API_BASE}delete_file`;
+            const requestBody = JSON.stringify({
+                relative_path: relativePath
+            });
+            console.log(`[JS DEBUG] Mengirim request ke: ${url}`);
+            console.log(`[JS DEBUG] Body request: ${requestBody}`);
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: requestBody
+            })
+            .then(response => {
+                 console.log(`[JS DEBUG] Response diterima dari server. Status: ${response.status}`); // Tambahkan log debug
+                 if (!response.ok) {
+                     throw new Error(`HTTP error! status: ${response.status}`);
+                 }
+                 return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    alert(`Gagal menghapus: ${data.error}`);
+                    console.error(`[JS ERROR] Server mengembalikan error: ${data.error}`); // Tambahkan log error
+                } else {
+                    alert(data.message);
+                    console.log(`[JS INFO] Sukses delete: ${data.message}`); // Tambahkan log info
+                    loadFiles(); // Refresh daftar file
+                }
+            })
+            .catch(error => {
+                console.error('[JS ERROR] Error deleting file:', error);
+                alert(`Terjadi kesalahan saat menghapus file: ${error.message || error}`); // Tampilkan pesan error yang lebih spesifik
+            });
+        }
+
+
+
+        // Refresh Files Button
+        refreshFilesBtn.addEventListener('click', loadFiles);
+
+        // Move All Processed Button
+        document.getElementById('moveAllProcessedBtn').addEventListener('click', moveAllProcessedToUpload);
+
+        // Trigger Upload All
+        triggerUploadBtn.addEventListener('click', function() {
+            fetch(`${API_BASE}trigger_upload`, {
+                method: 'POST',
+                credentials: 'include', // Kirim session
+            })
+            .then(response => response.json())
+            .then(data => {
+                uploadStatus.textContent = data.message || data.error;
+                uploadStatus.className = data.error ? 'text-danger mt-2' : 'text-success mt-2';
+                loadFiles(); // Refresh file list setelah upload
+            })
+            .catch(error => console.error('Error triggering upload:', error));
+        });
+
+    </script>
+</body>
+</html>
