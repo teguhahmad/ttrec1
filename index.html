@@ -10,6 +10,12 @@
         /* Tambahkan gaya dasar jika perlu */
         .hidden { display: none; }
         .file-table { margin-top: 20px; }
+        /* Gaya untuk spinner kecil di dalam sel tabel */
+        .action-spinner {
+            width: 1rem;
+            height: 1rem;
+            border-width: 0.15em;
+        }
     </style>
 </head>
 <body>
@@ -50,7 +56,11 @@
                             <label for="duration" class="form-label">Duration (seconds)</label>
                             <input type="number" class="form-control" id="duration" min="1" required>
                         </div>
-                        <button type="submit" class="btn btn-success">Start Recording</button>
+                        <!-- Tombol dengan indikator loading -->
+                        <button type="submit" class="btn btn-success" id="recordBtn">
+                            <span id="recordBtnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            <span id="recordBtnText">Start Recording</span>
+                        </button>
                     </form>
                     <div id="recordingStatus" class="mt-2"></div>
 
@@ -117,7 +127,11 @@
                             </div>
                         </div>
                     </div>
-                    <button id="triggerUploadBtn" class="btn btn-warning mt-3">Upload All from Upload Folder</button>
+                    <!-- Tombol Upload dengan indikator loading -->
+                    <button id="triggerUploadBtn" class="btn btn-warning mt-3">
+                        <span id="uploadBtnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                        <span id="uploadBtnText">Upload All from Upload Folder</span>
+                    </button>
                     <div id="uploadStatus" class="mt-2"></div>
                 </div>
             </div>
@@ -129,6 +143,36 @@
     <script>
         // Base URL API
         const API_BASE = '/';
+
+        // --- Fungsi Pembantu untuk Loading di Kolom Action ---
+        function showActionLoading(buttonElement, message = "Processing...") {
+            if (!buttonElement) return;
+            const actionCell = buttonElement.closest('td');
+            if (actionCell) {
+                // Simpan konten asli
+                actionCell.dataset.originalContent = actionCell.innerHTML;
+                // Ganti dengan spinner dan pesan
+                actionCell.innerHTML = `
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm text-primary action-spinner me-1" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <small>${message}</small>
+                    </div>
+                `;
+            }
+        }
+
+        function hideActionLoading(buttonElement) {
+            if (!buttonElement) return;
+            const actionCell = buttonElement.closest('td');
+            if (actionCell && actionCell.dataset.originalContent !== undefined) {
+                // Pulihkan konten asli
+                actionCell.innerHTML = actionCell.dataset.originalContent;
+                delete actionCell.dataset.originalContent;
+            }
+        }
+        // --- Akhir Fungsi Pembantu ---
 
         // DOM Elements
         const loginSection = document.getElementById('loginSection');
@@ -150,6 +194,12 @@
         const stopRecordingForm = document.getElementById('stopRecordingForm');
         const stopRecordingId = document.getElementById('stopRecordingId');
         const stopRecordingStatus = document.getElementById('stopRecordingStatus');
+        // Elements untuk loading indicator di tombol
+        const recordBtn = document.getElementById('recordBtn');
+        const recordBtnSpinner = document.getElementById('recordBtnSpinner');
+        const recordBtnText = document.getElementById('recordBtnText');
+        const uploadBtnSpinner = document.getElementById('uploadBtnSpinner');
+        const uploadBtnText = document.getElementById('uploadBtnText');
 
         // Check login status on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -226,11 +276,16 @@
             .catch(error => console.error('Error logging out:', error));
         });
 
-        // Trigger Recording
+        // Trigger Recording dengan Loading Indicator
         recordingForm.addEventListener('submit', function(e) {
             e.preventDefault();
             const targetUsername = document.getElementById('targetUsername').value;
             const duration = document.getElementById('duration').value;
+
+            // --- TAMPILKAN LOADING DI TOMBOL ---
+            recordBtn.disabled = true;
+            recordBtnSpinner.classList.remove('d-none');
+            recordBtnText.textContent = 'Starting Recording...';
 
             fetch(`${API_BASE}trigger_recording`, {
                 method: 'POST',
@@ -247,11 +302,17 @@
                 if (!data.error) {
                     // Jika sukses, refresh daftar rekaman aktif
                     loadActiveRecordings();
+                    // Reset form
+                    recordingForm.reset();
                 }
-                // Reset form
-                recordingForm.reset();
             })
-            .catch(error => console.error('Error triggering recording:', error));
+            .catch(error => console.error('Error triggering recording:', error))
+            .finally(() => {
+                // --- SEMBUNYIKAN LOADING DI TOMBOL ---
+                recordBtn.disabled = false;
+                recordBtnSpinner.classList.add('d-none');
+                recordBtnText.textContent = 'Start Recording';
+            });
         });
 
         // Load Active Recordings List
@@ -340,52 +401,81 @@
                 .catch(error => console.error('Error loading files:', error));
         }
 
-        
         function renderFiles(data) {
             // Kosongkan tabel dulu
             rawTableBody.innerHTML = '';
             processedTableBody.innerHTML = '';
             uploadTableBody.innerHTML = '';
 
-            // --- Fungsi Pembantu untuk membuat tombol Action ---
-            function createActionButtons(file, folderType) {
-                const actionCell = document.createElement('td');
+        // --- Fungsi Pembantu untuk membuat tombol Action ---
+        function createActionButtons(file, folderType) {
+            const actionCell = document.createElement('td');
 
-                // --- PERUBAHAN: Tambahkan tombol Convert hanya untuk file di folder 'raw' ---
-                if (folderType === 'raw') {
-                    const convertBtn = document.createElement('button');
-                    convertBtn.className = 'btn btn-sm btn-success me-1'; // Gunakan class 'success' untuk membedakan
-                    convertBtn.textContent = 'Convert';
-                    convertBtn.onclick = function () {
-                        convertFile(file.path); // Kirim relative_path ke fungsi convertFile
-                    };
-                    actionCell.appendChild(convertBtn);
-                }
-
-                // Tombol Rename (untuk semua folder)
-                const renameBtn = document.createElement('button');
-                renameBtn.className = 'btn btn-sm btn-outline-primary me-1'; // Tambahkan margin end
-                renameBtn.textContent = 'Rename';
-                renameBtn.onclick = function () {
-                    renameFile(file.path, folderType); // Kirim relative_path dan folder_type
+            // --- PERUBAHAN: Tambahkan tombol Convert hanya untuk file di folder 'raw' ---
+            if (folderType === 'raw') {
+                const convertBtn = document.createElement('button');
+                convertBtn.className = 'btn btn-sm btn-success me-1'; // Gunakan class 'success' untuk membedakan
+                convertBtn.textContent = 'Convert';
+                convertBtn.onclick = function () {
+                    convertFile(file.path, this); // Kirim relative_path ke fungsi convertFile dan 'this' (tombol)
                 };
-
-                // Tombol Delete (untuk semua folder)
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'btn btn-sm btn-outline-danger';
-                deleteBtn.textContent = 'Delete';
-                deleteBtn.onclick = function () {
-                    if (confirm(`Apakah Anda yakin ingin menghapus file '${file.name}'?`)) {
-                        deleteFile(file.path, folderType); // Kirim relative_path dan folder_type
-                    }
+                actionCell.appendChild(convertBtn);
+                
+                // --- PERUBAHAN: Tambahkan tombol Split untuk file di folder 'raw' ---
+                const splitBtn = document.createElement('button');
+                splitBtn.className = 'btn btn-sm btn-info me-1'; // Gunakan class 'info' untuk membedakan
+                splitBtn.textContent = 'Split';
+                splitBtn.onclick = function () {
+                    splitFile(file.path, folderType, this); // Kirim relative_path, folder_type, dan 'this' (tombol)
                 };
-
-                // Tambahkan tombol Rename & Delete ke cell (jika bukan raw, hanya ini yang muncul)
-                actionCell.appendChild(renameBtn);
-                actionCell.appendChild(deleteBtn);
-
-                return actionCell;
+                actionCell.appendChild(splitBtn);
             }
+
+            // Tombol Move to Upload (hanya untuk file di folder 'processed')
+            if (folderType === 'processed') {
+                const moveBtn = document.createElement('button');
+                moveBtn.className = 'btn btn-sm btn-info me-1'; // Gunakan class 'info' untuk membedakan
+                moveBtn.textContent = 'Move to Upload';
+                moveBtn.onclick = function () {
+                    moveFileToUpload(file.path, this); // Kirim relative_path dan 'this' (tombol)
+                };
+                actionCell.appendChild(moveBtn);
+                
+                // --- PERUBAHAN: Tambahkan tombol Split untuk file di folder 'processed' ---
+                const splitBtn = document.createElement('button');
+                splitBtn.className = 'btn btn-sm btn-warning me-1'; // Gunakan class 'warning' untuk membedakan
+                splitBtn.textContent = 'Split';
+                splitBtn.onclick = function () {
+                    splitFile(file.path, folderType, this); // Kirim relative_path, folder_type, dan 'this' (tombol)
+                };
+                actionCell.appendChild(splitBtn);
+            }
+
+            // Tombol Rename (untuk semua folder)
+            const renameBtn = document.createElement('button');
+            renameBtn.className = 'btn btn-sm btn-outline-primary me-1'; // Tambahkan margin end
+            renameBtn.textContent = 'Rename';
+            renameBtn.onclick = function () {
+                renameFile(file.path, folderType); // Kirim relative_path dan folder_type
+            };
+
+            // Tombol Delete (untuk semua folder)
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-sm btn-outline-danger';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.onclick = function () {
+                if (confirm(`Apakah Anda yakin ingin menghapus file '${file.name}'?`)) {
+                    deleteFile(file.path, folderType); // Kirim relative_path dan folder_type
+                }
+            };
+
+            // Tambahkan tombol Rename & Delete ke cell (jika bukan raw, hanya ini yang muncul)
+            actionCell.appendChild(renameBtn);
+            actionCell.appendChild(deleteBtn);
+
+            return actionCell;
+        }
+
 
             // Isi tabel Raw
             if (data.raw) {
@@ -426,15 +516,20 @@
                     row.insertCell(2).textContent = file.duration;
                     row.insertCell(3).textContent = file.modified;
                     
-                    // Tambahkan kolom Actions
+                    // Tambahkan kolom Actions (hanya rename/delete untuk upload)
                     const actionCell = createActionButtons(file, 'upload');
                     row.appendChild(actionCell);
                 });
             }
         }
 
-        // Fungsi untuk memicu konversi file
-        function convertFile(relative_path) {
+        // Fungsi untuk memicu konversi file dengan Loading Indicator
+        function convertFile(relative_path, convertButtonElement = null) {
+            // --- TAMPILKAN LOADING DI BARIS ---
+            if (convertButtonElement) {
+                showActionLoading(convertButtonElement, "Converting...");
+            }
+
             fetch(`${API_BASE}convert_file`, {
                 method: 'POST',
                 headers: {
@@ -453,11 +548,87 @@
                     loadFiles(); // Refresh daftar file raw dan processed
                 }
             })
-            .catch(error => console.error('Error converting file:', error));
+            .catch(error => console.error('Error converting file:', error))
+            .finally(() => {
+                // --- SEMBUNYIKAN LOADING DI BARIS ---
+                if (convertButtonElement) {
+                    hideActionLoading(convertButtonElement);
+                }
+            });
         }
 
-        // Fungsi untuk memicu pemindahan file ke upload
-        function moveFileToUpload(relative_path) {
+                // --- Fungsi untuk memicu split file ---
+        function splitFile(relative_path, folder_type, splitButtonElement = null) {
+             // --- TAMPILKAN LOADING DI BARIS ---
+            if (splitButtonElement) {
+                showActionLoading(splitButtonElement, "Splitting..."); // Gunakan fungsi loading yang sama
+            }
+
+            // Minta input jumlah bagian dari user
+            const numPartsStr = prompt("Masukkan jumlah bagian yang diinginkan (harus > 1):", "2");
+            if (!numPartsStr) {
+                console.log("[JS_SPLIT] Pengguna membatalkan split.");
+                if (splitButtonElement) hideActionLoading(splitButtonElement); // Sembunyikan loading jika dibatalkan
+                return; // Pengguna membatalkan
+            }
+            
+            const numParts = parseInt(numPartsStr);
+            if (isNaN(numParts) || numParts <= 1) {
+                alert("Jumlah bagian harus berupa angka bulat lebih dari 1.");
+                console.log(`[JS_SPLIT] Input tidak valid untuk numParts: ${numPartsStr}`);
+                if (splitButtonElement) hideActionLoading(splitButtonElement); // Sembunyikan loading jika input salah
+                return;
+            }
+
+            fetch(`${API_BASE}split_file`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Kirim session
+                body: JSON.stringify({
+                    relative_path: relative_path,
+                    folder_type: folder_type,
+                    num_parts: numParts
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                     // Tangani error HTTP
+                     return response.json().then(errData => { throw new Error(errData.error || `HTTP error! status: ${response.status}`); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    alert(`Gagal splitting: ${data.error}`);
+                    console.error(`[JS_SPLIT] Error dari server: ${data.error}`);
+                } else {
+                    alert(data.message || "Split file berhasil.");
+                    console.log(`[JS_SPLIT] File berhasil di-split:`, data.split_files);
+                    loadFiles(); // Refresh daftar file
+                }
+            })
+            .catch(error => {
+                console.error('[JS_SPLIT] Error splitting file:', error);
+                alert(`Terjadi kesalahan saat splitting file: ${error.message || error}`);
+            })
+            .finally(() => {
+                // --- SEMBUNYIKAN LOADING DI BARIS ---
+                if (splitButtonElement) {
+                    hideActionLoading(splitButtonElement);
+                }
+            });
+        }
+
+
+        // Fungsi untuk memicu pemindahan file ke upload dengan Loading Indicator
+        function moveFileToUpload(relative_path, moveButtonElement = null) {
+             // --- TAMPILKAN LOADING DI BARIS ---
+            if (moveButtonElement) {
+                showActionLoading(moveButtonElement, "Moving...");
+            }
+
             fetch(`${API_BASE}move_to_upload`, {
                 method: 'POST',
                 headers: {
@@ -476,7 +647,13 @@
                     loadFiles(); // Refresh daftar file processed dan upload
                 }
             })
-            .catch(error => console.error('Error moving file to upload:', error));
+            .catch(error => console.error('Error moving file to upload:', error))
+            .finally(() => {
+                // --- SEMBUNYIKAN LOADING DI BARIS ---
+                if (moveButtonElement) {
+                    hideActionLoading(moveButtonElement);
+                }
+            });
         }
 
         // Fungsi untuk memicu pemindahan SEMUA file processed ke upload
@@ -497,7 +674,6 @@
             })
             .catch(error => console.error('Error moving all files to upload:', error));
         }
-
 
         // --- Fungsi untuk Rename File ---
         function renameFile(relativePath, folderType) { // Tambahkan folderType meski tidak digunakan di backend untuk konsistensi jika diperlukan nanti
@@ -603,16 +779,19 @@
             });
         }
 
-
-
         // Refresh Files Button
         refreshFilesBtn.addEventListener('click', loadFiles);
 
         // Move All Processed Button
         document.getElementById('moveAllProcessedBtn').addEventListener('click', moveAllProcessedToUpload);
 
-        // Trigger Upload All
+        // Trigger Upload All dengan Loading Indicator
         triggerUploadBtn.addEventListener('click', function() {
+            // --- TAMPILKAN LOADING DI TOMBOL ---
+            triggerUploadBtn.disabled = true;
+            uploadBtnSpinner.classList.remove('d-none');
+            uploadBtnText.textContent = 'Uploading Files...';
+
             fetch(`${API_BASE}trigger_upload`, {
                 method: 'POST',
                 credentials: 'include', // Kirim session
@@ -621,9 +800,17 @@
             .then(data => {
                 uploadStatus.textContent = data.message || data.error;
                 uploadStatus.className = data.error ? 'text-danger mt-2' : 'text-success mt-2';
-                loadFiles(); // Refresh file list setelah upload
+                if (!data.error) {
+                    loadFiles(); // Refresh file list setelah upload
+                }
             })
-            .catch(error => console.error('Error triggering upload:', error));
+            .catch(error => console.error('Error triggering upload:', error))
+            .finally(() => {
+                 // --- SEMBUNYIKAN LOADING DI TOMBOL ---
+                triggerUploadBtn.disabled = false;
+                uploadBtnSpinner.classList.add('d-none');
+                uploadBtnText.textContent = 'Upload All from Upload Folder';
+            });
         });
 
     </script>
